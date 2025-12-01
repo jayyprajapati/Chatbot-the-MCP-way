@@ -26,18 +26,31 @@ class Chat:
                 tools=await ToolManager.get_all_tools(self.clients),
             )
 
-            self.llama_service.add_assistant_message(self.messages, response.get("message", {}).get("content", ""))
-
+            # For tool_use, we need to add the assistant message with tool_calls info
             if response.get("stop_reason") == "tool_use":
-                print(self.llama_service.text_from_message(response))
+                # Add assistant message with the original message (contains tool_calls)
+                assistant_msg = response.get("message", {})
+                self.messages.append({"role": "assistant", "content": assistant_msg.get("content", ""), "tool_calls": assistant_msg.get("tool_calls", [])})
+                
+                print(f"[DEBUG] LLM wants to use tools")
+                if response.get("message", {}).get("content"):
+                    print(f"[DEBUG] LLM says: {response.get('message', {}).get('content')}")
+                
                 tool_result_parts = await ToolManager.execute_tool_requests(
                     self.clients, response
                 )
+                
+                print(f"[DEBUG] Tool results: {tool_result_parts}")
 
-                self.llama_service.add_user_message(
-                    self.messages, tool_result_parts
-                )
+                # Add tool results as tool messages (Ollama format)
+                for result in tool_result_parts:
+                    tool_msg = {
+                        "role": "tool",
+                        "content": result.get("content", ""),
+                    }
+                    self.messages.append(tool_msg)
             else:
+                self.llama_service.add_assistant_message(self.messages, response.get("message", {}).get("content", ""))
                 final_text_response = self.llama_service.text_from_message(
                     response
                 )
